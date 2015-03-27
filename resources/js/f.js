@@ -148,36 +148,32 @@ function iniciarVotacao() {
                                                             _ += "<div class='container'>";
                                                             _ += "<h1>"+e.get("titulo")+"</h1>";
                                                             _ += "<h3>"+e.get("pergunta")+"</h3>";
-                                                            
+                                                            _ += "<div class='container-fluid'>";
                                                             $(opcoes).each(function(i, e) {
-                                                                _ += "<div class='col-xs-6 col-md-4' style='margin-top: 2em'>";
-                                                                _ += "<button data-value='"+e.id+"' class='btn btn-block btn-default opcao' onclick='focusControl(this)'>";
-                                                                if (e.get("arquivo")) 
-                                                                    _ += "<img src='"+e.get("arquivo").url()+"' class='img-rounded' /></br>";
-                                                                if (e.get("textoOpcao"))
-                                                                    _ += "<h3 style='white-space: normal;'>"+e.get("textoOpcao")+"</h3>";
-                                                                    //_ += "<h3>"+e.get("textoOpcao")+"</h3>";
-                                                                _ += "</button>";
-                                                                _ += "</div>";
+                                                                _ += "<div class='row box-votacao opcao' data-value='"+e.id+"' onclick='focusControl(this)'>";
+                                                                if (e.get("arquivo")) {
+                                                                    _ += "<div class='pull-left col-md-2'>"
+                                                                    _ += "<img src='"+e.get("arquivo").url()+"' class='img-rounded' />";
+                                                                    _ += "</div>";
+                                                                }
+
+                                                                if (e.get("textoOpcao")) {
+                                                                    _ += "<div class='col-md-10 descricao-opcao-voto center-block pagination-centered'><p class='large'>";
+                                                                    _ += e.get("textoOpcao");
+                                                                    _ += "</p></div>"
+                                                                      
+                                                                }
+                                                                _ += "</div><br>";
+
                                                             });
-                                                            
+                                                            _ += "</div>";
                                                             _ += "</div>";
                                                             pergunta.innerHTML = _;
-                                                            
-                                                            var maisAlto = 0;
-                                                            var thumbnails = $(".opcao");
-                                                            thumbnails.each(function() {       
-                                                                var thisHeight = $(this).height();       
-                                                                if(thisHeight > maisAlto) {          
-                                                                    maisAlto = thisHeight;       
-                                                                }    
-                                                            });  
-                                                            thumbnails.each(function() { $(this).height(maisAlto+20); });
                                                         }
                                                     })    
                                                 } else {
                                                     pergunta.innerHTML = "<h1>Voto já computado</h1>";
-                                                    $(".btn-success").addClass("disabled"); 
+                                                    $("#btn-cancelar").removeClass("btn-danger").addClass("btn-primary").html("<span class='large'>Voltar</span>");
                                                 } 
                                             }
                                           });
@@ -187,7 +183,7 @@ function iniciarVotacao() {
                                 });
                             } else {
                                 pergunta.innerHTML = "<h1>Nenhuma pesquisa disponível no momento</h1>";
-                                $(".btn-success").addClass("disabled");
+                                $("#btn-cancelar").removeClass("btn-danger").addClass("btn-primary").html("<span class='large'>Voltar</span>");
                             }
                         }
                     });
@@ -200,9 +196,11 @@ function iniciarVotacao() {
 }
 
 function focusControl(element) {
-    $("button.btn-primary").removeClass("btn-primary");
+    $("div.row.btn-primary").removeClass("btn-primary");
     $(element).addClass("btn-primary");
     if (confirm("Confirma seu voto?")) {
+        $(".opcao").attr("onclick", "");
+        $(element).html("<center>Seu voto está sendo registrado, aguarde... <span class='fa fa-refresh fa-spin'></span></center>");
         registrarVoto();
     }
 }
@@ -293,6 +291,83 @@ function obterParticipanteAtivo() {
            document.getElementById('imatricula').value = participante.get('matricula');
         }
     }); 
+ }
+
+ function goImportarParticipante() {
+    goTo("pages/importacaoCSVParticipantes.html", function(){
+        setTitle("Importar Participantes");
+        $(".loading").hide();
+    });
+ }
+ 
+ function prepararArquivo() {
+    var arquivo = $("#csv-file")[0];
+    if (arquivo.files.length > 0) {
+      $(".loading").fadeIn();
+      var file = arquivo.files[0];
+      processarCSV(file);
+      $(".loading").fadeOut();
+    }
+ }
+
+ function processarCSV(csv) {
+    var resultado = document.getElementById("resultado");
+    resultado.innerHTML += "<table class='table table-hover table-condensed'><thead><td>Matricula</td><td>Nome</td><td></td></thead></table>";
+
+    Papa.parse(csv, {
+        worker: true,
+        complete : function (results, file) {
+            setTitle("Importar Participantes", "Leitura do arquivo concluída. O processamento será executado em 2º plano e você pode acompanhar o log de execução.");
+        },
+        skipEmptyLines: true,
+        step: function(results) {           
+            var table = $(".table")[0];
+            var matricula = results.data[0][0];
+            var nome = results.data[0][1];
+            
+            if (!matricula || !nome) 
+                return;
+            
+            var Participante = Parse.Object.extend("Participante");
+            var participante = new Participante();
+
+            var buscarParticipante = new Parse.Query(Participante);
+            buscarParticipante.equalTo("matricula", matricula);
+            buscarParticipante.find({
+                success : function(participanteDb) {
+                    participante.set("nome", nome);
+                    participante.set("matricula", matricula);
+                    participante.set("ativo", true);
+                    
+                    if (participanteDb.length == 0) {
+                        
+                        participante.save().then(function() {
+                            table.innerHTML += "<tr class='success'><td>"+matricula+"</td><td>"+nome+"</td><td>Importado com Sucesso!</td></tr>";    
+                        }, 
+
+                        function() {
+                            table.innerHTML += "<tr class='danger'><td>"+matricula+"</td><td>"+nome+"</td><td>Ocorreu um erro durante a importação. Tente novamente</td></tr>";
+                        });
+                    } else {
+                        participante.set("objectId", participanteDb[0].id);
+                        participante.save().then(function() {
+                            table.innerHTML += "<tr class='warning'><td>"+matricula+"</td><td>"+nome+"</td><td>Contato já existia e foi atualizado!</td></tr>";
+                        }, 
+
+                        function() {
+                            table.innerHTML += "<tr class='danger'><td>"+matricula+"</td><td>"+nome+"</td><td>Ocorreu um erro durante a importação. Tente novamente</td></tr>";
+                        });
+                    }
+                    
+                }, 
+
+                error : function (error) {
+                    resultado.innerHTML += "<tr class='danger'><td>"+matricula+"</td><td>"+nome+"</td><td>Ocorreu um erro durante a importação. Tente novamente</td></tr>";   
+                }
+            });
+
+        }
+    });
  }
 
  function goListarParticipantes() {
